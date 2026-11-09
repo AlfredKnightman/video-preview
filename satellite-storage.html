@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Room to Move — Satellite Storage</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0a; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; font-family:-apple-system,system-ui,sans-serif; }
+  canvas { border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.8); max-width:100vw; }
+  .controls { margin-top:16px; display:flex; gap:12px; align-items:center; }
+  button { background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; padding:8px 20px; border-radius:100px; font-size:14px; cursor:pointer; transition:background 0.2s; }
+  button:hover { background:rgba(255,255,255,0.2); }
+  .title { color:rgba(255,255,255,0.4); font-size:12px; letter-spacing:0.1em; text-transform:uppercase; margin-top:12px; }
+  .progress { width:360px; height:3px; background:rgba(255,255,255,0.1); border-radius:2px; margin-top:12px; cursor:pointer; }
+  .progress-fill { height:100%; background:#F59E0B; border-radius:2px; transition:width 0.1s; }
+</style>
+</head>
+<body>
+<canvas id="c" width="360" height="640"></canvas>
+<div class="progress" id="prog"><div class="progress-fill" id="fill" style="width:0%"></div></div>
+<div class="controls">
+  <button id="btn">▶ Play</button>
+  <button onclick="restart()">↺ Restart</button>
+</div>
+<div class="title">Satellite Storage · Room to Move · 41s</div>
+
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = 360, H = 640;
+let frame = 0, playing = false, raf;
+const FPS = 30;
+const TOTAL = 41 * FPS; // 1230 frames
+
+// Color palette
+const P = {
+  bg: '#F5F0E8', wall: '#E8E0D0', floor: '#D4C8B0',
+  orange: '#F59E0B', blue: '#3B82F6', red: '#EF4444',
+  green: '#22C55E', dark: '#1C1917', white: '#FAFAF9',
+  sky: '#BFDBFE', snow: '#EFF6FF', wood: '#92400E'
+};
+
+function lerp(a, b, t) { return a + (b - a) * Math.clamp(t, 0, 1); }
+Math.clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+function easeOut(t) { return 1 - (1-t)*(1-t); }
+function easeIn(t) { return t*t; }
+function bounce(t) { return Math.abs(Math.sin(t * Math.PI * 3)) * (1 - t); }
+
+// Scene timing (frames at 30fps)
+const SCENES = [
+  { start: 0,   end: 246,  name: 'closet' },   // 0–8.2s
+  { start: 246, end: 450,  name: 'teddy' },    // 8.2–15s
+  { start: 450, end: 660,  name: 'van' },      // 15–22s
+  { start: 660, end: 900,  name: 'dance' },    // 22–30s
+  { start: 900, end: 1140, name: 'ski' },      // 30–38s
+  { start: 1140, end: 1230, name: 'logo' },    // 38–41s
+];
+
+function getScene(f) {
+  return SCENES.find(s => f >= s.start && f < s.end) || SCENES[SCENES.length-1];
+}
+function sceneT(f) {
+  const s = getScene(f);
+  return (f - s.start) / (s.end - s.start);
+}
+
+// Drawing helpers
+function roundRect(x, y, w, h, r, fill, stroke) {
+  ctx.beginPath(); ctx.roundRect(x,y,w,h,r);
+  if(fill){ ctx.fillStyle=fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle=stroke; ctx.lineWidth=2; ctx.stroke(); }
+}
+function circle(x,y,r,fill) { ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle=fill; ctx.fill(); }
+function text(str, x, y, size, color, align='center', weight='700') {
+  ctx.font = `${weight} ${size}px -apple-system,system-ui,sans-serif`;
+  ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(str, x, y);
+}
+
+// ---- SCENE 1: CLOSET AVALANCHE ----
+function drawCloset(t) {
+  const bg = P.bg;
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  // Room walls
+  ctx.fillStyle = P.wall; ctx.fillRect(0,0,W, H*0.7);
+  ctx.fillStyle = P.floor; ctx.fillRect(0, H*0.7, W, H*0.3);
+  // Closet doors
+  const doorOpen = easeOut(Math.min(t*3, 1));
+  ctx.save();
+  roundRect(60, 120, 100, 280, 4, '#C9B99A', '#A09070');
+  roundRect(200, 120, 100, 280, 4, '#C9B99A', '#A09070');
+  // Door handles
+  circle(155, 260, 6, '#888'); circle(205, 260, 6, '#888');
+  ctx.restore();
+  
+  if(t < 0.3) {
+    // Stuffed closet - items peeking
+    const bulge = Math.sin(t * Math.PI * 8) * 3 * (t/0.3);
+    roundRect(80+bulge, 140, 60, 240, 2, P.orange);
+    roundRect(190-bulge, 140, 60, 240, 2, P.blue);
+    text('TAP!', W/2, 300, 18, P.dark);
+  } else {
+    // AVALANCHE
+    const av = easeOut((t - 0.3) / 0.7);
+    const items = [
+      {x:120, y:160, w:70, h:30, c:P.orange, rot:0.2, label:'SWEATERS'},
+      {x:180, y:140, w:50, h:50, c:P.blue, rot:-0.3, label:'SHOES'},
+      {x:100, y:200, w:80, h:25, c:P.red, rot:0.1, label:'COATS'},
+      {x:200, y:180, w:60, h:35, c:P.green, rot:-0.2, label:'STUFF'},
+      {x:150, y:220, w:90, h:30, c:'#A855F7', rot:0.15, label:'MORE'},
+      {x:130, y:170, w:55, h:45, c:'#EC4899', rot:-0.1, label:'THINGS'},
+    ];
+    items.forEach((item, i) => {
+      const delay = i * 0.08;
+      const it = Math.clamp((av - delay) / 0.5, 0, 1);
+      const iy = lerp(item.y, H*0.65 + i*15, easeIn(it));
+      const rot = item.rot * Math.sin(it * Math.PI);
+      ctx.save(); ctx.translate(item.x, iy); ctx.rotate(rot);
+      roundRect(-item.w/2, -item.h/2, item.w, item.h, 4, item.c);
+      text(item.label, 0, 5, 9, P.white);
+      ctx.restore();
+    });
+    // Person looking shocked
+    if(t > 0.5) {
+      const px = W*0.5, py = H*0.72;
+      circle(px, py-30, 20, '#FBBF24'); // head
+      ctx.fillStyle = P.dark; ctx.fillRect(px-15, py-10, 30, 40); // body
+      // shocked mouth
+      ctx.beginPath(); ctx.arc(px, py-25, 8, 0, Math.PI); ctx.fillStyle='#1C1917'; ctx.fill();
+      // arms up
+      ctx.strokeStyle='#FBBF24'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(px-15, py-5); ctx.lineTo(px-35, py-30); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px+15, py-5); ctx.lineTo(px+35, py-30); ctx.stroke();
+    }
+    if(t > 0.75) {
+      ctx.fillStyle='rgba(28,25,23,0.75)'; roundRect(30, H*0.78, W-60, 50, 12, 'rgba(28,25,23,0.8)');
+      text('No room to move?', W/2, H*0.78+22, 15, P.white);
+      text('Satellite Storage has you covered.', W/2, H*0.78+42, 12, P.orange);
+    }
+  }
+}
+
+// ---- SCENE 2: TEDDY BEAR BONK ----
+function drawTeddy(t) {
+  ctx.fillStyle = P.bg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = P.wall; ctx.fillRect(0,0,W, H*0.65);
+  ctx.fillStyle = P.floor; ctx.fillRect(0, H*0.65, W, H*0.35);
+  // Box stack
+  [[60,380,80,80,P.orange],[160,380,80,80,P.blue],[110,310,80,80,P.red],[90,250,80,60,'#A855F7']].forEach(([x,y,w,h,c]) => {
+    roundRect(x,y,w,h,4,c,'rgba(0,0,0,0.1)');
+    text('📦', x+w/2, y+h/2+8, 22, '#fff');
+  });
+  // Teddy bear falling
+  const tFall = easeIn(Math.min(t*2, 1));
+  const bearY = lerp(50, H*0.58, tFall);
+  const bearRot = t * Math.PI * 2;
+  ctx.save(); ctx.translate(W*0.65, bearY); ctx.rotate(bearRot);
+  circle(0, 0, 25, '#D97706'); // body
+  circle(0, -20, 18, '#D97706'); // head
+  circle(-8, -25, 7, '#92400E'); // left ear
+  circle(8, -25, 7, '#92400E'); // right ear
+  circle(-6, -20, 4, '#1C1917'); circle(6, -20, 4, '#1C1917'); // eyes
+  if(t > 0.5) { // dizzy eyes after bonk
+    text('×', -6, -16, 14, '#EF4444'); text('×', 6, -16, 14, '#EF4444');
+    text('💫', 25, -30, 16, P.dark);
+  }
+  ctx.restore();
+  // Impact flash
+  if(t > 0.48 && t < 0.56) {
+    ctx.fillStyle = 'rgba(255,200,0,0.4)'; ctx.fillRect(0,0,W,H);
+    text('BONK!', W*0.65, H*0.56, 28, P.orange);
+  }
+  if(t > 0.7) {
+    roundRect(30, H*0.78, W-60, 50, 12, 'rgba(28,25,23,0.85)');
+    text('Store the clutter.', W/2, H*0.78+22, 16, P.white);
+    text('Keep the peace. 🐻', W/2, H*0.78+42, 13, P.orange);
+  }
+}
+
+// ---- SCENE 3: VAN PICKUP ----
+function drawVan(t) {
+  ctx.fillStyle = '#87CEEB'; ctx.fillRect(0,0,W,H*0.6);
+  ctx.fillStyle = '#5B8C3E'; ctx.fillRect(0,H*0.6,W,H*0.4);
+  // Road
+  ctx.fillStyle = '#555'; ctx.fillRect(0,H*0.68,W,H*0.15);
+  // Dashed lines
+  ctx.strokeStyle='#FFF'; ctx.setLineDash([20,15]); ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(0,H*0.755); ctx.lineTo(W,H*0.755); ctx.stroke();
+  ctx.setLineDash([]);
+  // Van driving in
+  const vanX = lerp(-150, 40, easeOut(Math.min(t*1.5,1)));
+  ctx.save(); ctx.translate(vanX, H*0.63);
+  // Van body
+  roundRect(0,0,160,70,8,P.orange);
+  roundRect(10,10,60,45,4,'rgba(135,206,235,0.7)'); // windshield
+  // wheels
+  circle(30, 68, 18, P.dark); circle(30,68,10,'#888');
+  circle(130, 68, 18, P.dark); circle(130,68,10,'#888');
+  // Logo on van
+  text('🛸 SATELLITE', 100, 25, 10, P.white, 'center', '800');
+  text('STORAGE', 100, 40, 10, P.white);
+  ctx.restore();
+  // House with stuff outside
+  ctx.fillStyle='#D4A373'; ctx.fillRect(220,H*0.3,120,H*0.38);
+  ctx.fillStyle='#EF4444';
+  ctx.beginPath(); ctx.moveTo(210,H*0.3); ctx.lineTo(280,H*0.18); ctx.lineTo(350,H*0.3); ctx.closePath(); ctx.fill();
+  // Stuff on curb
+  [[240,H*0.63,P.blue,'BOX'],[270,H*0.63,P.red,'BOX'],[300,H*0.63,P.orange,'BOX']].forEach(([x,y,c,l]) => {
+    roundRect(x,y,30,30,3,c); text(l,x+15,y+20,8,P.white);
+  });
+  if(t>0.6) {
+    text('We come to you! 🚐', W/2, H*0.9, 16, P.white, 'center', '700');
+    text('Free pickup & delivery', W/2, H*0.9+22, 13, P.orange);
+  }
+}
+
+// ---- SCENE 4: SOCK-SLIDE DANCE ----
+function drawDance(t) {
+  ctx.fillStyle = P.bg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#DDD5C8'; ctx.fillRect(0,0,W,H*0.65);
+  // Wood floor with shine
+  for(let i=0;i<H*0.35;i+=20) {
+    ctx.fillStyle = i%40===0?'#C9A96E':'#B8935A';
+    ctx.fillRect(0, H*0.65+i, W, 20);
+  }
+  // Shine effect
+  const shine = (Math.sin(t * Math.PI * 4) + 1) / 2;
+  ctx.fillStyle = `rgba(255,255,255,${shine*0.15})`;
+  ctx.fillRect(0, H*0.65, W, H*0.35);
+  // Person sliding
+  const slideX = W/2 + Math.sin(t * Math.PI * 4) * 80;
+  const slideY = H * 0.72;
+  ctx.save(); ctx.translate(slideX, slideY);
+  const tilt = Math.sin(t * Math.PI * 4) * 0.3;
+  ctx.rotate(tilt);
+  // Body
+  ctx.fillStyle = '#3B82F6'; ctx.fillRect(-15,-50,30,45);
+  // Head
+  circle(0,-60,18,'#FBBF24');
+  // Eyes (happy)
+  ctx.fillStyle='#1C1917';
+  ctx.beginPath(); ctx.arc(-6,-63,3,0,Math.PI,true); ctx.fill();
+  ctx.beginPath(); ctx.arc(6,-63,3,0,Math.PI,true); ctx.fill();
+  // Smile
+  ctx.beginPath(); ctx.arc(0,-58,8,0.1,Math.PI-0.1); ctx.strokeStyle='#1C1917'; ctx.lineWidth=2; ctx.stroke();
+  // Socks
+  ctx.fillStyle = P.orange; ctx.fillRect(-18,-5,15,10); ctx.fillRect(3,-5,15,10);
+  // Arms out
+  const armAngle = Math.sin(t * Math.PI * 8) * 0.4;
+  ctx.strokeStyle = '#FBBF24'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-15,-35); ctx.lineTo(-45,-35+Math.sin(armAngle)*15); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(15,-35); ctx.lineTo(45,-35-Math.sin(armAngle)*15); ctx.stroke();
+  ctx.restore();
+  // Musical notes floating
+  ['♪','♫','♩','♬'].forEach((note,i) => {
+    const ny = H*0.3 - (t * 150 + i*40) % 200;
+    const nx = 60 + i*80 + Math.sin(t*3+i)*20;
+    text(note, nx, ny, 20, `hsl(${i*60+t*100},70%,55%)`);
+  });
+  // Stars/sparkles on floor
+  if(t>0.3) {
+    for(let i=0;i<5;i++) {
+      const sx = 40+i*70, sy = H*0.78+Math.sin(t*5+i)*8;
+      text('✨', sx, sy, 16, P.orange);
+    }
+  }
+  if(t>0.6) {
+    roundRect(20,H*0.84,W-40,60,12,'rgba(28,25,23,0.85)');
+    text("When it's gone, you'll dance.", W/2, H*0.84+25, 14, P.white);
+    text('Satellite Storage. Make room.', W/2, H*0.84+48, 12, P.orange);
+  }
+}
+
+// ---- SCENE 5: SKI DELIVERY ----
+function drawSki(t) {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0,0,0,H*0.6);
+  sky.addColorStop(0,'#BFDBFE'); sky.addColorStop(1,'#EFF6FF');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,W,H*0.6);
+  // Snow ground
+  ctx.fillStyle=P.snow; ctx.fillRect(0,H*0.6,W,H*0.4);
+  // Snow hills
+  ctx.fillStyle='#E0EDFF';
+  ctx.beginPath(); ctx.moveTo(0,H*0.65); ctx.quadraticCurveTo(W/4,H*0.5,W/2,H*0.65);
+  ctx.quadraticCurveTo(3*W/4,H*0.78,W,H*0.65); ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.fill();
+  // Snowflakes
+  for(let i=0;i<12;i++) {
+    const sx = (i*113 + t*30) % W;
+    const sy = (i*79 + t*50) % (H*0.7);
+    text('❄', sx, sy, 10+i%6, 'rgba(147,197,253,0.7)');
+  }
+  // Skier with delivery box
+  const skX = lerp(-80, W+80, easeOut(t));
+  ctx.save(); ctx.translate(skX, H*0.65);
+  // Ski poles
+  ctx.strokeStyle='#888'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-20,-10); ctx.lineTo(-40,20); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10,-10); ctx.lineTo(30,20); ctx.stroke();
+  // Body
+  ctx.fillStyle='#EF4444'; ctx.fillRect(-12,-45,24,40);
+  // Head + helmet
+  circle(0,-55,15,'#EF4444');
+  circle(0,-58,12,'#1C1917');
+  // Package
+  ctx.save(); ctx.translate(0,-30);
+  roundRect(-18,-15,36,30,4,P.orange);
+  text('📦', 0, 2, 20, P.white);
+  ctx.restore();
+  // Skis
+  ctx.fillStyle='#1C1917';
+  ctx.fillRect(-25,0,20,6); ctx.fillRect(5,0,20,6);
+  ctx.restore();
+  // Snow spray effect
+  if(t > 0.1) {
+    for(let i=0;i<6;i++) {
+      const sx = skX - 10 + Math.random()*20 - 15;
+      const sy = H*0.67 + Math.random()*10;
+      circle(sx,sy,3+i,'rgba(255,255,255,0.6)');
+    }
+  }
+  if(t>0.6) {
+    roundRect(20,H*0.84,W-40,60,12,'rgba(28,25,23,0.85)');
+    text('Snow day? No problem.', W/2, H*0.84+25, 15, P.white);
+    text('We deliver anywhere. 🎿', W/2, H*0.84+48, 13, P.orange);
+  }
+}
+
+// ---- SCENE 6: LOGO ----
+function drawLogo(t) {
+  const bgAlpha = easeOut(t);
+  ctx.fillStyle = `rgb(${Math.floor(lerp(245,15,bgAlpha))},${Math.floor(lerp(240,10,bgAlpha))},${Math.floor(lerp(232,10,bgAlpha))})`;
+  ctx.fillRect(0,0,W,H);
+  const logoY = H*0.4 + (1-easeOut(t))*40;
+  // Icon
+  text('🛸', W/2, logoY-20, 60, P.orange);
+  // Name
+  ctx.fillStyle = easeOut(t) > 0.3 ? P.orange : 'rgba(245,158,11,0)';
+  text('SATELLITE', W/2, logoY+60, 32, P.orange);
+  text('STORAGE', W/2, logoY+96, 32, P.orange);
+  if(t > 0.4) {
+    const tagAlpha = easeOut((t-0.4)/0.6);
+    ctx.globalAlpha = tagAlpha;
+    text('Room to Move.', W/2, logoY+136, 20, P.white);
+    text('satellitestorage.com', W/2, logoY+164, 14, 'rgba(255,255,255,0.5)');
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  const scene = getScene(frame);
+  const t = sceneT(frame);
+  switch(scene.name) {
+    case 'closet': drawCloset(t); break;
+    case 'teddy':  drawTeddy(t);  break;
+    case 'van':    drawVan(t);    break;
+    case 'dance':  drawDance(t);  break;
+    case 'ski':    drawSki(t);    break;
+    case 'logo':   drawLogo(t);   break;
+  }
+  // Frame counter / scene label
+  ctx.fillStyle='rgba(0,0,0,0.5)'; roundRect(W-90,8,82,22,4,'rgba(0,0,0,0.4)');
+  text(`${scene.name.toUpperCase()} ${Math.round(frame/FPS)}s`, W-49, 23, 10, 'rgba(255,255,255,0.7)');
+  // Update progress
+  document.getElementById('fill').style.width = (frame/TOTAL*100)+'%';
+}
+
+function tick() {
+  if(!playing) return;
+  frame = (frame + 1) % TOTAL;
+  draw();
+  if(frame >= TOTAL-1) { playing=false; document.getElementById('btn').textContent='▶ Replay'; return; }
+  raf = requestAnimationFrame(tick);
+}
+
+function restart() { frame=0; draw(); playing=false; document.getElementById('btn').textContent='▶ Play'; }
+
+document.getElementById('btn').onclick = () => {
+  if(playing) { playing=false; document.getElementById('btn').textContent='▶ Play'; return; }
+  if(frame >= TOTAL-1) frame=0;
+  playing=true; document.getElementById('btn').textContent='⏸ Pause';
+  raf = requestAnimationFrame(tick);
+};
+document.getElementById('prog').onclick = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  frame = Math.floor((e.clientX-r.left)/r.width * TOTAL);
+  draw();
+};
+
+draw();
+</script>
+</body>
+</html>
